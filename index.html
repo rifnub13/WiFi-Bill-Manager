@@ -283,32 +283,57 @@
         }
 
         // --- IMPORT EXCEL ---
-        function importExcel() {
-            const file = document.getElementById('importFile').files[0];
-            if (!file) return;
+function importExcel() {
+            const fileInput = document.getElementById('importFile');
+            const file = fileInput.files[0];
+            if (!file) return alert("Silakan pilih file Excel!");
+
             const reader = new FileReader();
             reader.onload = (e) => {
-                const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
                 const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+
+                if (json.length === 0) return alert("File kosong!");
+
+                let count = 0;
                 json.forEach(row => {
-                    let harga = row['HARGA'] || row['Harga'] || 0;
-                    if(harga < 2000) harga *= 1000;
-                    dataPelanggan.push({
-                        id: Date.now() + Math.random(),
-                        nama: row['NAMA PELANGGAN'] || row['Nama'],
-                        tgl: row['TANGGAL'] || row['Tgl'] || 1,
-                        jumlah: harga,
-                        wa: row['NO HP'] || row['WhatsApp'] || '',
-                        alamat: row['ALAMAT'] || row['Alamat'] || '',
-                        status: 'Belum Bayar'
+                    // --- LOGIKA PEMBERSIH HEADER (Agar tidak Undefined) ---
+                    // Kita buat semua nama kolom jadi huruf kecil dan hapus spasi agar mudah dicocokkan
+                    let rowClean = {};
+                    Object.keys(row).forEach(key => {
+                        let cleanKey = key.toString().toLowerCase().trim().replace(/\s/g, '');
+                        rowClean[cleanKey] = row[key];
                     });
+
+                    // Cari data berdasarkan kemungkinan nama kolom
+                    const nama = rowClean['namapelanggan'] || rowClean['nama'] || row['NAMA PELANGGAN'];
+                    const tgl = rowClean['tanggal'] || rowClean['tgl'] || row['TANGGAL'];
+                    let harga = rowClean['harga'] || rowClean['tagihan'] || row['HARGA'];
+                    const alamat = rowClean['alamat'] || row['ALAMAT'] || "";
+                    const wa = rowClean['wa'] || rowClean['nohp'] || rowClean['whatsapp'] || "";
+
+                    // Hanya masukkan jika Nama ada (menghindari baris kosong ter-import)
+                    if (nama) {
+                        dataPelanggan.push({
+                            id: Date.now() + Math.random(),
+                            nama: nama.toString().trim(),
+                            tgl: tgl ? tgl.toString().trim() : "1",
+                            jumlah: parseInt(harga) || 0,
+                            wa: wa.toString().trim(),
+                            alamat: alamat.toString().trim(),
+                            status: 'Belum Bayar'
+                        });
+                        count++;
+                    }
                 });
+
                 save();
-                alert("Import Selesai!");
+                alert(count + " Pelanggan berhasil di-import!");
+                fileInput.value = ""; 
             };
             reader.readAsArrayBuffer(file);
         }
-
         // --- KAS VIEW ---
         function renderKasView(type) {
             currentKasView = type;
