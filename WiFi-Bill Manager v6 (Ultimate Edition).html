@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WiFi-Bill Manager v6</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        .active-section { display: block !important; }
+        .hidden-section { display: none; }
+        .active-card { border: 2px solid #4f46e5 !important; background-color: #f5f3ff !important; }
+        body { padding-bottom: 90px; }
+        .terlambat { animation: pulse 2s infinite; border: 2px solid #ef4444 !important; }
+        @keyframes pulse { 0% { background-color: #fff; } 50% { background-color: #fee2e2; } 100% { background-color: #fff; } }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <header class="bg-indigo-700 text-white p-4 shadow-md sticky top-0 z-50 flex justify-between items-center">
+        <h1 class="text-lg font-bold">WiFi-Bill Manager</h1>
+        <div class="flex gap-2">
+            <button onclick="backupData()" title="Backup Data" class="bg-indigo-600 p-2 rounded-lg text-sm">💾</button>
+            <label class="bg-indigo-600 p-2 rounded-lg text-sm cursor-pointer">
+                📂 <input type="file" id="restoreFile" class="hidden" onchange="restoreData(event)">
+            </label>
+        </div>
+    </header>
+
+    <main class="p-4">
+        
+        <!-- SECTION 1: HOME -->
+        <section id="dashboard" class="active-section hidden-section">
+            <div class="text-center py-4">
+                <h2 class="text-xl font-bold mb-1">Ringkasan</h2>
+                <p id="current-month" class="text-indigo-600 text-sm font-bold mb-6 uppercase">April 2024</p>
+                
+                <div class="space-y-4">
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                        <p class="text-xs text-gray-500 uppercase font-semibold">Saldo Bersih</p>
+                        <p id="dash-saldo" class="text-3xl font-black text-indigo-700">Rp 0</p>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="bg-white p-4 rounded-2xl border-l-4 border-green-500 shadow-sm">
+                            <p class="text-[10px] text-gray-400 uppercase font-bold">Uang Masuk</p>
+                            <p id="dash-masuk" class="text-md font-bold text-green-600">Rp 0</p>
+                        </div>
+                        <div class="bg-white p-4 rounded-2xl border-l-4 border-red-500 shadow-sm">
+                            <p class="text-[10px] text-gray-400 uppercase font-bold">Pengeluaran</p>
+                            <p id="dash-keluar" class="text-md font-bold text-red-600">Rp 0</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tombol Reset Bulanan -->
+                <div class="mt-8 p-4 bg-orange-50 rounded-2xl border border-orange-100 text-center">
+                    <p class="text-xs text-orange-700 mb-3 font-semibold">Ganti ke Bulan Baru?</p>
+                    <button onclick="resetBulanan()" class="bg-orange-500 text-white px-6 py-2 rounded-xl text-sm font-bold shadow-lg shadow-orange-200">Reset Semua Status Lunas</button>
+                    <p class="text-[9px] text-orange-400 mt-2">*Aksi ini akan mengembalikan semua status pelanggan menjadi "Belum Bayar"</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 2: PELANGGAN -->
+        <section id="pelanggan" class="hidden-section">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-bold text-indigo-900">Database</h2>
+                <button onclick="openModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg">+ Tambah</button>
+            </div>
+            
+            <div class="bg-white p-4 rounded-2xl shadow-sm mb-6 border border-indigo-100 flex gap-2">
+                <input type="file" id="importFile" accept=".xlsx, .xls" class="text-xs block w-full border-none p-1">
+                <button onclick="importExcel()" class="bg-green-600 text-white px-4 py-1 rounded-lg text-xs font-bold">Import</button>
+            </div>
+
+            <div id="list-pelanggan" class="space-y-3"></div>
+        </section>
+
+        <!-- SECTION 3: TAGIHAN & WA -->
+        <section id="tagihan" class="hidden-section">
+            <h2 class="text-lg font-bold mb-3 text-indigo-900">Penagihan & WA</h2>
+            <input type="text" id="searchInput" oninput="renderTagihan()" placeholder="Cari Nama, Tgl, atau Alamat..." class="w-full p-4 border rounded-2xl shadow-sm mb-4 outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+            
+            <div id="list-tagihan" class="space-y-3"></div>
+        </section>
+
+        <!-- SECTION 4: KAS -->
+        <section id="keuangan" class="hidden-section">
+            <h2 class="text-lg font-bold mb-4 text-indigo-900">Laporan Kas</h2>
+            <div class="grid grid-cols-2 gap-3 mb-6">
+                <div id="card-masuk" onclick="renderKasView('masuk')" class="bg-white p-3 rounded-xl border-2 border-transparent shadow-sm cursor-pointer">
+                    <p class="text-[10px] text-gray-500 uppercase font-bold text-green-600">Lunas</p>
+                    <p id="kas-masuk" class="text-sm font-bold">Rp 0</p>
+                </div>
+                <div id="card-keluar" onclick="renderKasView('keluar')" class="bg-white p-3 rounded-xl border-2 border-transparent shadow-sm cursor-pointer">
+                    <p class="text-[10px] text-gray-500 uppercase font-bold text-red-600">Pengeluaran</p>
+                    <p id="kas-keluar" class="text-sm font-bold">Rp 0</p>
+                </div>
+                <div id="card-total" onclick="renderKasView('total')" class="bg-white p-3 rounded-xl border-2 border-transparent shadow-sm cursor-pointer">
+                    <p class="text-[10px] text-gray-500 uppercase font-bold">Total Pelanggan</p>
+                    <p id="kas-total" class="text-sm font-bold text-indigo-600">0</p>
+                </div>
+                <div id="card-belum" onclick="renderKasView('belum')" class="bg-white p-3 rounded-xl border-2 border-transparent shadow-sm cursor-pointer">
+                    <p class="text-[10px] text-gray-500 uppercase font-bold text-orange-600">Belum Bayar</p>
+                    <p id="kas-belum" class="text-sm font-bold">0</p>
+                </div>
+            </div>
+            <div id="form-pengeluaran" class="bg-white p-4 rounded-2xl shadow-sm mb-4 border border-red-100 hidden">
+                <input type="text" id="ket-keluar" placeholder="Keterangan..." class="w-full p-2 border mb-2 rounded-lg text-sm">
+                <input type="number" id="nom-keluar" placeholder="Nominal..." class="w-full p-2 border mb-2 rounded-lg text-sm">
+                <button onclick="tambahPengeluaran()" class="bg-red-500 text-white w-full py-2 rounded-lg text-sm font-bold">Simpan Pengeluaran</button>
+            </div>
+            <div id="kas-detail-list" class="space-y-2"></div>
+        </section>
+    </main>
+
+    <!-- MODAL FORM -->
+    <div id="modalPelanggan" class="fixed inset-0 bg-black bg-opacity-50 hidden z-[100] flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl">
+            <h3 id="modalTitle" class="text-lg font-bold mb-4 text-indigo-900">Data Pelanggan</h3>
+            <input type="hidden" id="editId">
+            <div class="space-y-3 text-sm">
+                <div><label class="text-[10px] font-bold text-gray-400 ml-1">Nama</label><input type="text" id="f_nama" class="w-full p-3 bg-gray-50 rounded-xl"></div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="text-[10px] font-bold text-gray-400 ml-1">Tgl Tagihan</label><input type="number" id="f_tgl" class="w-full p-3 bg-gray-50 rounded-xl"></div>
+                    <div><label class="text-[10px] font-bold text-gray-400 ml-1">Harga</label><input type="number" id="f_jumlah" class="w-full p-3 bg-gray-50 rounded-xl"></div>
+                </div>
+                <div><label class="text-[10px] font-bold text-gray-400 ml-1">No WhatsApp (6281xxx)</label><input type="number" id="f_wa" class="w-full p-3 bg-gray-50 rounded-xl"></div>
+                <div><label class="text-[10px] font-bold text-gray-400 ml-1">Alamat</label><textarea id="f_alamat" class="w-full p-3 bg-gray-50 rounded-xl" rows="2"></textarea></div>
+            </div>
+            <div class="flex gap-3 mt-6">
+                <button onclick="closeModal()" class="flex-1 py-3 text-gray-400 font-bold">Batal</button>
+                <button onclick="simpanPelanggan()" class="flex-1 py-3 bg-indigo-600 text-white rounded-2xl font-bold">Simpan</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigasi -->
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t flex justify-around p-3 shadow-2xl z-50">
+        <button onclick="showSection('dashboard')" class="nav-btn flex flex-col items-center text-indigo-600" data-section="dashboard">🏠<span class="text-[10px] font-bold">Home</span></button>
+        <button onclick="showSection('pelanggan')" class="nav-btn flex flex-col items-center text-gray-400" data-section="pelanggan">👥<span class="text-[10px] font-bold">Data</span></button>
+        <button onclick="showSection('tagihan')" class="nav-btn flex flex-col items-center text-gray-400" data-section="tagihan">🧾<span class="text-[10px] font-bold">Tagihan</span></button>
+        <button onclick="showSection('keuangan')" class="nav-btn flex flex-col items-center text-gray-400" data-section="keuangan">💰<span class="text-[10px] font-bold">Kas</span></button>
+    </nav>
+
+    <script>
+        let dataPelanggan = JSON.parse(localStorage.getItem('wifi_v6_pel')) || [];
+        let dataPengeluaran = JSON.parse(localStorage.getItem('wifi_v6_peng')) || [];
+        let currentKasView = 'masuk';
+
+        function save() {
+            localStorage.setItem('wifi_v6_pel', JSON.stringify(dataPelanggan));
+            localStorage.setItem('wifi_v6_peng', JSON.stringify(dataPengeluaran));
+            refreshUI();
+        }
+
+        function refreshUI() {
+            const now = new Date();
+            const bulanIndo = ["JANUARI", "FEBRUARI", "MARET", "APRIL", "MEI", "JUNI", "JULI", "AGUSTUS", "SEPTEMBER", "OKTOBER", "NOVEMBER", "DESEMBER"];
+            document.getElementById('current-month').innerText = `${bulanIndo[now.getMonth()]} ${now.getFullYear()}`;
+            
+            renderDashboard();
+            renderPelanggan();
+            renderTagihan();
+            renderKasView(currentKasView);
+        }
+
+        function showSection(id) {
+            document.querySelectorAll('section').forEach(s => { s.classList.add('hidden-section'); s.classList.remove('active-section'); });
+            document.getElementById(id).classList.remove('hidden-section');
+            document.getElementById(id).classList.add('active-section');
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.replace('text-indigo-600', 'text-gray-400');
+                if(btn.dataset.section === id) btn.classList.replace('text-gray-400', 'text-indigo-600');
+            });
+        }
+
+        // --- DASHBOARD ---
+        function renderDashboard() {
+            const masuk = dataPelanggan.filter(p => p.status === 'Lunas').reduce((s, p) => s + p.jumlah, 0);
+            const keluar = dataPengeluaran.reduce((s, p) => s + p.nominal, 0);
+            document.getElementById('dash-masuk').innerText = `Rp ${masuk.toLocaleString()}`;
+            document.getElementById('dash-keluar').innerText = `Rp ${keluar.toLocaleString()}`;
+            document.getElementById('dash-saldo').innerText = `Rp ${(masuk - keluar).toLocaleString()}`;
+            document.getElementById('kas-masuk').innerText = `Rp ${masuk.toLocaleString()}`;
+            document.getElementById('kas-keluar').innerText = `Rp ${keluar.toLocaleString()}`;
+            document.getElementById('kas-total').innerText = dataPelanggan.length;
+            document.getElementById('kas-belum').innerText = dataPelanggan.filter(p => p.status === 'Belum Bayar').length;
+        }
+
+        // --- MANAJEMEN PELANGGAN ---
+        function renderPelanggan() {
+            const list = document.getElementById('list-pelanggan');
+            list.innerHTML = dataPelanggan.map(p => `
+                <div class="bg-white p-4 rounded-2xl shadow-sm border flex justify-between items-center">
+                    <div>
+                        <p class="font-bold text-indigo-900">${p.nama}</p>
+                        <p class="text-[10px] text-gray-400 uppercase font-bold">Tgl Tagihan: ${p.tgl} • WA: ${p.wa || '-'}</p>
+                    </div>
+                    <div class="flex gap-3">
+                        <button onclick="openModal(${p.id})" class="text-blue-500 font-bold text-xs uppercase">Edit</button>
+                        <button onclick="hapusPelanggan(${p.id})" class="text-red-400 font-bold text-xs uppercase">Hapus</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // --- TAGIHAN & WHATSAPP ---
+        function renderTagihan() {
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            const list = document.getElementById('list-tagihan');
+            const today = new Date().getDate();
+            
+            const filtered = dataPelanggan.filter(p => 
+                p.tgl.toString() === search || p.nama.toLowerCase().includes(search) || p.alamat.toLowerCase().includes(search)
+            );
+
+            list.innerHTML = (search === "" ? dataPelanggan : filtered).map(p => {
+                const isTerlambat = (today > p.tgl && p.status === 'Belum Bayar');
+                return `
+                <div class="bg-white p-4 rounded-2xl shadow-sm border flex justify-between items-center ${isTerlambat ? 'terlambat' : ''}">
+                    <div class="w-2/3">
+                        <p class="font-black text-gray-800">${p.nama} ${isTerlambat ? '<span class="text-[8px] bg-red-600 text-white px-1 rounded ml-1">TELAT</span>' : ''}</p>
+                        <p class="text-indigo-600 font-bold text-sm">Rp ${p.jumlah.toLocaleString()}</p>
+                        <p class="text-[9px] text-gray-400 italic">${p.alamat || '-'}</p>
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        ${p.status === 'Belum Bayar' ? 
+                            `<button onclick="bayar(${p.id})" class="bg-indigo-600 text-white px-3 py-1 rounded-lg text-[10px] font-bold">BAYAR</button>
+                             <button onclick="kirimWA(${p.id})" class="bg-green-100 text-green-600 px-3 py-1 rounded-lg text-[10px] font-bold">CHAT WA</button>` : 
+                            `<span class="text-green-500 font-black text-xs text-right">LUNAS ✅</span>`}
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function kirimWA(id) {
+            const p = dataPelanggan.find(x => x.id === id);
+            if(!p.wa) return alert("Nomor WA tidak ada!");
+            const msg = `Halo Bapak/Ibu ${p.nama}, kami ingin menginfokan bahwa tagihan WiFi bulan ini sebesar Rp ${p.jumlah.toLocaleString()} sudah jatuh tempo pada tanggal ${p.tgl}. Mohon segera melakukan pembayaran. Terima kasih.`;
+            window.open(`https://wa.me/${p.wa}?text=${encodeURIComponent(msg)}`, '_blank');
+        }
+
+        function bayar(id) {
+            const idx = dataPelanggan.findIndex(p => p.id === id);
+            dataPelanggan[idx].status = 'Lunas';
+            save();
+        }
+
+        function resetBulanan() {
+            if(confirm("Hati-hati! Ini akan mereset SEMUA status LUNAS menjadi BELUM BAYAR untuk bulan baru. Lanjutkan?")) {
+                dataPelanggan.forEach(p => p.status = 'Belum Bayar');
+                save();
+                alert("Berhasil reset bulan baru!");
+            }
+        }
+
+        // --- BACKUP & RESTORE ---
+        function backupData() {
+            const data = { pel: dataPelanggan, peng: dataPengeluaran };
+            const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `backup_wifi_${new Date().toLocaleDateString()}.json`;
+            a.click();
+        }
+
+        function restoreData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const data = JSON.parse(e.target.result);
+                if (data.pel && data.peng) {
+                    dataPelanggan = data.pel;
+                    dataPengeluaran = data.peng;
+                    save();
+                    alert("Data Berhasil Dipulihkan!");
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // --- IMPORT EXCEL ---
+        function importExcel() {
+            const file = document.getElementById('importFile').files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+                const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+                json.forEach(row => {
+                    let harga = row['HARGA'] || row['Harga'] || 0;
+                    if(harga < 2000) harga *= 1000;
+                    dataPelanggan.push({
+                        id: Date.now() + Math.random(),
+                        nama: row['NAMA PELANGGAN'] || row['Nama'],
+                        tgl: row['TANGGAL'] || row['Tgl'] || 1,
+                        jumlah: harga,
+                        wa: row['NO HP'] || row['WhatsApp'] || '',
+                        alamat: row['ALAMAT'] || row['Alamat'] || '',
+                        status: 'Belum Bayar'
+                    });
+                });
+                save();
+                alert("Import Selesai!");
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // --- KAS VIEW ---
+        function renderKasView(type) {
+            currentKasView = type;
+            const container = document.getElementById('kas-detail-list');
+            const title = document.getElementById('view-title');
+            document.querySelectorAll('#keuangan .cursor-pointer').forEach(c => c.classList.remove('active-card'));
+            document.getElementById(`card-${type}`).classList.add('active-card');
+            document.getElementById('form-pengeluaran').classList.toggle('hidden', type !== 'keluar');
+
+            let html = '';
+            if (type === 'masuk') {
+                html = dataPelanggan.filter(p => p.status === 'Lunas').map(p => `<div class="bg-white p-3 rounded-xl border-l-4 border-green-500 shadow-sm flex justify-between text-sm"><span>${p.nama}</span><span class="font-bold text-green-600">Rp ${p.jumlah.toLocaleString()}</span></div>`).join('');
+            } else if (type === 'keluar') {
+                html = dataPengeluaran.map((p, idx) => `<div class="bg-white p-3 rounded-xl border-l-4 border-red-500 shadow-sm flex justify-between text-sm"><span>${p.ket}</span><div class="flex items-center gap-3"><span class="font-bold text-red-600">Rp ${p.nominal.toLocaleString()}</span><button onclick="hapusEx(${idx})" class="text-gray-300">✕</button></div></div>`).join('');
+            } else if (type === 'total') {
+                html = dataPelanggan.map(p => `<div class="bg-white p-2 rounded shadow-sm border text-[10px] mb-1 flex justify-between"><span>${p.nama}</span><span>${p.status}</span></div>`).join('');
+            } else if (type === 'belum') {
+                html = dataPelanggan.filter(p => p.status === 'Belum Bayar').map(p => `<div class="bg-white p-3 rounded-xl border-l-4 border-orange-500 shadow-sm flex justify-between text-sm"><span>${p.nama}</span><span class="font-bold text-red-500 text-xs">Rp ${p.jumlah.toLocaleString()}</span></div>`).join('');
+            }
+            container.innerHTML = html || '<p class="text-center py-4 text-xs">Tidak ada data.</p>';
+        }
+
+        // --- CRUD BASIC ---
+        function openModal(id = null) {
+            document.getElementById('modalPelanggan').classList.remove('hidden');
+            if(id) {
+                const p = dataPelanggan.find(i => i.id === id);
+                document.getElementById('editId').value = p.id;
+                document.getElementById('f_nama').value = p.nama;
+                document.getElementById('f_tgl').value = p.tgl;
+                document.getElementById('f_jumlah').value = p.jumlah;
+                document.getElementById('f_wa').value = p.wa || "";
+                document.getElementById('f_alamat').value = p.alamat;
+            } else {
+                document.getElementById('editId').value = "";
+                document.getElementById('f_nama').value = "";
+                document.getElementById('f_tgl').value = "";
+                document.getElementById('f_jumlah').value = "";
+                document.getElementById('f_wa').value = "";
+                document.getElementById('f_alamat').value = "";
+            }
+        }
+        function closeModal() { document.getElementById('modalPelanggan').classList.add('hidden'); }
+        function simpanPelanggan() {
+            const id = document.getElementById('editId').value;
+            const p = { id: id ? parseFloat(id) : Date.now(), nama: document.getElementById('f_nama').value, tgl: document.getElementById('f_tgl').value, jumlah: parseInt(document.getElementById('f_jumlah').value) || 0, wa: document.getElementById('f_wa').value, alamat: document.getElementById('f_alamat').value, status: 'Belum Bayar' };
+            if(!p.nama || !p.tgl) return alert("Nama & Tgl wajib!");
+            if(id) { const idx = dataPelanggan.findIndex(x => x.id == id); p.status = dataPelanggan[idx].status; dataPelanggan[idx] = p; }
+            else { dataPelanggan.push(p); }
+            save(); closeModal();
+        }
+        function hapusPelanggan(id) { if(confirm("Hapus?")) { dataPelanggan = dataPelanggan.filter(p => p.id !== id); save(); } }
+        function tambahPengeluaran() {
+            const k = document.getElementById('ket-keluar').value, n = parseInt(document.getElementById('nom-keluar').value);
+            if(k && n) { dataPengeluaran.push({ ket: k, nominal: n, tgl: new Date().toLocaleDateString() }); save(); }
+            document.getElementById('ket-keluar').value = ""; document.getElementById('nom-keluar').value = "";
+        }
+        function hapusEx(i) { dataPengeluaran.splice(i, 1); save(); }
+
+        refreshUI();
+    </script>
+</body>
+</html>
