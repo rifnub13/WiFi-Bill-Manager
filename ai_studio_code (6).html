@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WiFi-Bill Manager v15</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        .hidden { display: none !important; }
+        .active-card { border: 2px solid #4f46e5 !important; background-color: #f5f3ff !important; }
+        .filter-active { background-color: #4f46e5 !important; color: white !important; border-color: #4f46e5 !important; }
+        body { padding-bottom: 90px; -webkit-tap-highlight-color: transparent; }
+        /* Smooth scroll untuk filter tanggal */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans">
+
+    <header class="bg-indigo-700 text-white p-4 shadow-md sticky top-0 z-50 flex justify-between items-center text-sm font-bold">
+        <span>WiFi-Bill Manager</span>
+        <div class="flex gap-4">
+            <button onclick="backupData()">💾 Backup</button>
+            <label class="cursor-pointer">📂 Pulih<input type="file" id="restoreFile" class="hidden" onchange="restoreData(event)"></label>
+        </div>
+    </header>
+
+    <main class="p-4">
+        <!-- HOME (RINGKASAN) -->
+        <section id="dashboard">
+            <div class="text-center py-4 mb-4">
+                <h2 class="text-xl font-bold mb-1 font-black">Selamat Datang</h2>
+                <p id="current-month" class="text-indigo-600 text-xs font-bold uppercase"></p>
+            </div>
+            <div class="space-y-4">
+                <div class="bg-white p-6 rounded-3xl shadow-sm border text-center">
+                    <p class="text-[10px] text-gray-400 uppercase font-bold mb-1">Total Saldo Bersih</p>
+                    <p id="dash-saldo" class="text-3xl font-black text-indigo-700">Rp 0</p>
+                </div>
+                <div class="grid grid-cols-2 gap-4 text-left">
+                    <div class="bg-white p-4 rounded-2xl border-l-4 border-green-500 shadow-sm">
+                        <p class="text-[9px] text-gray-400 font-bold uppercase">Uang Masuk</p>
+                        <p id="dash-masuk" class="text-sm font-bold text-green-600">Rp 0</p>
+                    </div>
+                    <div class="bg-white p-4 rounded-2xl border-l-4 border-red-500 shadow-sm">
+                        <p class="text-[9px] text-gray-400 font-bold uppercase">Pengeluaran</p>
+                        <p id="dash-keluar" class="text-sm font-bold text-red-600">Rp 0</p>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-8 p-6 bg-white rounded-3xl border shadow-sm grid grid-cols-2 gap-3">
+                <button onclick="resetBulanan()" class="bg-orange-100 text-orange-600 py-3 rounded-2xl text-[10px] font-bold uppercase">Bulan Baru</button>
+                <button onclick="hapusSemuaData()" class="bg-red-100 text-red-600 py-3 rounded-2xl text-[10px] font-bold uppercase">Hapus Semua</button>
+            </div>
+        </section>
+
+        <!-- DATA PELANGGAN -->
+        <section id="pelanggan" class="hidden">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-bold">Database Pelanggan</h2>
+                <button onclick="openModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow">+ Tambah</button>
+            </div>
+            
+            <!-- Pencarian di Tab Data -->
+            <div class="mb-4">
+                <input type="text" id="searchDataInput" oninput="renderPelanggan()" placeholder="Cari nama di database..." class="w-full p-4 border rounded-3xl shadow-sm outline-none focus:ring-2 focus:ring-indigo-400 text-sm">
+            </div>
+
+            <div class="bg-white p-5 rounded-3xl shadow-sm border mb-6 text-center">
+                <input type="file" id="importFile" accept=".xlsx, .xls" class="text-xs w-full p-2 bg-gray-50 rounded-xl mb-3 border-2 border-dashed">
+                <button onclick="importExcelSmart()" class="bg-green-600 text-white w-full py-3 rounded-2xl text-xs font-bold uppercase shadow-sm">Import Excel</button>
+            </div>
+            <div id="list-pelanggan" class="space-y-3"></div>
+        </section>
+
+        <!-- TAGIHAN (DENGAN FILTER TANGGAL) -->
+        <section id="tagihan" class="hidden">
+            <h2 class="text-lg font-bold mb-4">Daftar Penagihan</h2>
+            
+            <!-- Kotak Pencarian -->
+            <div class="mb-3">
+                <input type="text" id="searchTagihanInput" oninput="renderTagihan()" placeholder="Cari nama atau alamat..." class="w-full p-4 border rounded-3xl shadow-sm outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+            </div>
+
+            <!-- Pengelompokan Tanggal (Filter Horizontal) -->
+            <div id="dateFilterContainer" class="flex gap-2 overflow-x-auto no-scrollbar pb-4 mb-2">
+                <!-- Tombol tanggal otomatis muncul di sini -->
+            </div>
+            
+            <div id="list-tagihan" class="space-y-3"></div>
+        </section>
+
+        <!-- KAS -->
+        <section id="keuangan" class="hidden">
+            <h2 class="text-lg font-bold mb-4 text-indigo-900">Laporan Kas</h2>
+            <div class="grid grid-cols-2 gap-3 mb-6 text-center">
+                <div id="card-masuk" onclick="renderKasView('masuk')" class="bg-white p-4 rounded-2xl border-2 border-transparent shadow-sm cursor-pointer">
+                    <p class="text-[9px] text-green-600 font-bold uppercase">Lunas</p>
+                    <p id="kas-masuk" class="text-xs font-bold">Rp 0</p>
+                </div>
+                <div id="card-keluar" onclick="renderKasView('keluar')" class="bg-white p-4 rounded-2xl border-2 border-transparent shadow-sm cursor-pointer">
+                    <p class="text-[9px] text-red-600 font-bold uppercase">Pengeluaran</p>
+                    <p id="kas-keluar" class="text-xs font-bold">Rp 0</p>
+                </div>
+                <div id="card-total" onclick="renderKasView('total')" class="bg-white p-4 rounded-2xl border-2 border-transparent shadow-sm cursor-pointer text-gray-400">
+                    <p class="text-[9px] font-bold uppercase">Total User</p>
+                    <p id="kas-total" class="text-xs font-bold">0</p>
+                </div>
+                <div id="card-belum" onclick="renderKasView('belum')" class="bg-white p-4 rounded-2xl border-2 border-transparent shadow-sm cursor-pointer text-orange-600">
+                    <p class="text-[9px] font-bold uppercase">Belum Lunas</p>
+                    <p id="kas-belum" class="text-xs font-bold">0</p>
+                </div>
+            </div>
+
+            <div id="area-lunas-options" class="hidden bg-indigo-50 p-4 rounded-3xl border border-indigo-100 mb-6">
+                <div class="flex justify-between items-center mb-4 font-bold text-[10px] uppercase">
+                    <span class="text-indigo-700 font-black">Ekspor Laporan Excel</span>
+                    <button onclick="isGroupedView = !isGroupedView; renderKasView('masuk')" class="bg-white px-3 py-1 rounded shadow-sm border text-indigo-600">Tampilan Grup</button>
+                </div>
+                <div class="space-y-3">
+                    <div class="flex gap-2">
+                        <input type="date" id="filterTglExport" class="flex-1 p-2 rounded-xl text-xs border outline-none">
+                        <button onclick="exportLunasHarian()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl text-[9px] font-bold uppercase">Harian</button>
+                    </div>
+                    <button onclick="exportLunasSemua()" class="w-full bg-green-600 text-white py-3 rounded-xl text-[9px] font-bold uppercase shadow-sm">Ekspor Semua Lunas</button>
+                </div>
+            </div>
+
+            <div id="form-pengeluaran" class="bg-white p-5 rounded-3xl shadow-sm mb-4 border hidden">
+                <input type="text" id="ket-keluar" placeholder="Keterangan..." class="w-full p-2 border mb-2 rounded-xl text-sm outline-none">
+                <input type="number" id="nom-keluar" placeholder="Nominal..." class="w-full p-2 border mb-3 rounded-xl text-sm outline-none">
+                <button onclick="tambahPengeluaran()" class="bg-red-500 text-white w-full py-3 rounded-xl text-xs font-bold uppercase">Simpan</button>
+            </div>
+
+            <div id="kas-detail-list" class="space-y-3"></div>
+        </section>
+    </main>
+
+    <!-- MODAL -->
+    <div id="modalPelanggan" class="fixed inset-0 bg-black bg-opacity-50 hidden z-[100] flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl">
+            <h3 id="modalTitle" class="text-lg font-bold mb-4 font-black">INPUT DATA</h3>
+            <input type="hidden" id="editId">
+            <div class="space-y-4 text-sm">
+                <input type="text" id="f_nama" placeholder="Nama Pelanggan" class="w-full p-3 bg-gray-50 rounded-2xl border">
+                <div class="grid grid-cols-2 gap-3">
+                    <input type="number" id="f_tgl" placeholder="Tgl Tagihan" class="w-full p-3 bg-gray-50 rounded-2xl border">
+                    <input type="number" id="f_jumlah" placeholder="Harga" class="w-full p-3 bg-gray-50 rounded-2xl border">
+                </div>
+                <textarea id="f_alamat" placeholder="Alamat" class="w-full p-3 bg-gray-50 rounded-2xl border" rows="2"></textarea>
+            </div>
+            <div class="flex gap-3 mt-8 text-center">
+                <button onclick="closeModal()" class="flex-1 py-3 text-gray-400 font-bold uppercase text-[10px]">Batal</button>
+                <button onclick="simpanPelanggan()" class="flex-1 py-3 bg-indigo-600 text-white rounded-2xl font-bold uppercase text-[10px]">Simpan</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- NAVIGATION -->
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t flex justify-around p-3 shadow-2xl z-50 rounded-t-3xl">
+        <button onclick="showSection('dashboard')" class="nav-btn flex flex-col items-center text-indigo-600" data-section="dashboard">🏠<span class="text-[9px] font-bold uppercase">Home</span></button>
+        <button onclick="showSection('pelanggan')" class="nav-btn flex flex-col items-center text-gray-400" data-section="pelanggan">👥<span class="text-[9px] font-bold uppercase">Data</span></button>
+        <button onclick="showSection('tagihan')" class="nav-btn flex flex-col items-center text-gray-400" data-section="tagihan">🧾<span class="text-[9px] font-bold uppercase">Tagihan</span></button>
+        <button onclick="showSection('keuangan')" class="nav-btn flex flex-col items-center text-gray-400" data-section="keuangan">💰<span class="text-[9px] font-bold uppercase">Kas</span></button>
+    </nav>
+
+    <script>
+        let dataPelanggan = JSON.parse(localStorage.getItem('wifi_v15_db')) || [];
+        let dataPengeluaran = JSON.parse(localStorage.getItem('wifi_v15_ex')) || [];
+        let currentKasView = 'masuk';
+        let isGroupedView = true;
+        let selectedTagihanDate = 'all';
+
+        function save() {
+            localStorage.setItem('wifi_v15_db', JSON.stringify(dataPelanggan));
+            localStorage.setItem('wifi_v15_ex', JSON.stringify(dataPengeluaran));
+            refreshUI();
+        }
+
+        function refreshUI() {
+            const now = new Date();
+            const bulan = ["JANUARI", "FEBRUARI", "MARET", "APRIL", "MEI", "JUNI", "JULI", "AGUSTUS", "SEPTEMBER", "OKTOBER", "NOVEMBER", "DESEMBER"];
+            document.getElementById('current-month').innerText = `${bulan[now.getMonth()]} ${now.getFullYear()}`;
+            renderDashboard();
+            renderPelanggan();
+            renderTagihan();
+            renderKasView(currentKasView);
+        }
+
+        function showSection(id) {
+            document.querySelectorAll('section').forEach(s => s.classList.add('hidden'));
+            document.getElementById(id).classList.remove('hidden');
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.replace('text-indigo-600', 'text-gray-400');
+                if(btn.dataset.section === id) btn.classList.replace('text-gray-400', 'text-indigo-600');
+            });
+        }
+
+        // --- MANAJEMEN DASHBOARD ---
+        function renderDashboard() {
+            const lunas = dataPelanggan.filter(p => p.status === 'Lunas');
+            const masuk = lunas.reduce((s, p) => s + p.jumlah, 0);
+            const keluar = dataPengeluaran.reduce((s, p) => s + p.nominal, 0);
+            document.getElementById('dash-saldo').innerText = `Rp ${(masuk - keluar).toLocaleString()}`;
+            document.getElementById('dash-masuk').innerText = `Rp ${masuk.toLocaleString()}`;
+            document.getElementById('dash-keluar').innerText = `Rp ${keluar.toLocaleString()}`;
+            document.getElementById('kas-masuk').innerText = `Rp ${masuk.toLocaleString()}`;
+            document.getElementById('kas-keluar').innerText = `Rp ${keluar.toLocaleString()}`;
+            document.getElementById('kas-total').innerText = dataPelanggan.length;
+            document.getElementById('kas-belum').innerText = dataPelanggan.filter(p => p.status === 'Belum Bayar').length;
+        }
+
+        // --- MANAJEMEN DATA (DENGAN SEARCH) ---
+        function renderPelanggan() {
+            const s = document.getElementById('searchDataInput').value.toLowerCase();
+            const list = document.getElementById('list-pelanggan');
+            const filtered = dataPelanggan.filter(p => p.nama.toLowerCase().includes(s));
+            
+            list.innerHTML = filtered.map(p => `
+                <div class="bg-white p-4 rounded-3xl shadow-sm border border-gray-100 flex justify-between items-center px-5">
+                    <div class="w-2/3"><p class="font-bold text-indigo-900 uppercase tracking-tighter">${p.nama}</p><p class="text-[9px] text-gray-400 font-bold uppercase">Tgl: ${p.tgl} • Rp ${p.jumlah.toLocaleString()}</p></div>
+                    <div class="flex gap-4"><button onclick="openModal('${p.id}')" class="text-blue-500 font-bold text-[10px] uppercase">Edit</button><button onclick="hapusPelanggan('${p.id}')" class="text-red-400 font-bold text-[10px] uppercase tracking-tighter">Hapus</button></div>
+                </div>`).join('') || '<p class="text-center py-4 text-xs text-gray-400">Data tidak ditemukan.</p>';
+        }
+
+        // --- TAGIHAN (DENGAN GROUPING TANGGAL) ---
+        function renderTagihan() {
+            const s = document.getElementById('searchTagihanInput').value.toLowerCase();
+            const list = document.getElementById('list-tagihan');
+            const filterContainer = document.getElementById('dateFilterContainer');
+            
+            // 1. Dapatkan daftar pelanggan belum bayar
+            const belumBayar = dataPelanggan.filter(p => p.status === 'Belum Bayar');
+            
+            // 2. Generate Filter Tanggal (Urutkan Tanggal)
+            const uniqueDates = [...new Set(belumBayar.map(p => p.tgl))].sort((a,b) => a - b);
+            let filterHtml = `<button onclick="setTagihanDate('all')" class="px-4 py-2 rounded-2xl text-[10px] font-bold border shrink-0 ${selectedTagihanDate === 'all' ? 'filter-active' : 'bg-white text-gray-400'}">SEMUA</button>`;
+            uniqueDates.forEach(tgl => {
+                filterHtml += `<button onclick="setTagihanDate('${tgl}')" class="px-5 py-2 rounded-2xl text-[10px] font-bold border shrink-0 ${selectedTagihanDate == tgl ? 'filter-active' : 'bg-white text-gray-400'}">TGL ${tgl}</button>`;
+            });
+            filterContainer.innerHTML = filterHtml;
+
+            // 3. Filter Data Berdasarkan Search dan Klik Tanggal
+            const res = belumBayar.filter(p => {
+                const matchSearch = p.nama.toLowerCase().includes(s) || (p.alamat||'').toLowerCase().includes(s);
+                const matchDate = selectedTagihanDate === 'all' || p.tgl == selectedTagihanDate;
+                return matchSearch && matchDate;
+            });
+
+            list.innerHTML = res.map(p => `
+                <div class="bg-white p-4 rounded-3xl shadow-sm border border-l-4 border-l-indigo-600 flex justify-between items-center px-5">
+                    <div class="w-2/3"><p class="font-bold text-gray-800 uppercase tracking-tighter">${p.nama}</p><p class="text-indigo-600 font-bold text-xs">Rp ${p.jumlah.toLocaleString()} <span class="text-[9px] text-gray-400 font-normal ml-1 border px-1 rounded">TGL ${p.tgl}</span></p></div>
+                    <button onclick="bayar('${p.id}')" class="bg-indigo-600 text-white px-5 py-2 rounded-2xl text-[10px] font-bold shadow uppercase">Bayar</button>
+                </div>`).join('') || '<p class="text-center py-10 text-[10px] text-gray-400 font-bold uppercase italic tracking-widest">Kosong!</p>';
+        }
+
+        function setTagihanDate(tgl) {
+            selectedTagihanDate = tgl;
+            renderTagihan();
+        }
+
+        function bayar(id) {
+            const idx = dataPelanggan.findIndex(p => p.id === id);
+            if(idx !== -1) {
+                dataPelanggan[idx].status = 'Lunas';
+                dataPelanggan[idx].tglPelunasan = new Date().toISOString().split('T')[0];
+                save();
+            }
+        }
+
+        function batalBayar(id) {
+            if(confirm("Batalkan pembayaran?")) {
+                const idx = dataPelanggan.findIndex(p => p.id === id);
+                if(idx !== -1) {
+                    dataPelanggan[idx].status = 'Belum Bayar';
+                    delete dataPelanggan[idx].tglPelunasan;
+                    save();
+                }
+            }
+        }
+
+        function renderKasView(type) {
+            currentKasView = type;
+            const container = document.getElementById('kas-detail-list');
+            document.querySelectorAll('#keuangan .bg-white').forEach(c => c.classList.remove('active-card'));
+            document.getElementById(`card-${type}`).classList.add('active-card');
+            document.getElementById('form-pengeluaran').classList.toggle('hidden', type !== 'keluar');
+            document.getElementById('area-lunas-options').classList.toggle('hidden', type !== 'masuk');
+
+            let html = '';
+            if (type === 'masuk') {
+                const lunas = dataPelanggan.filter(p => p.status === 'Lunas').sort((a,b) => new Date(b.tglPelunasan) - new Date(a.tglPelunasan));
+                if (isGroupedView) {
+                    const groups = {};
+                    lunas.forEach(p => { if(!groups[p.tglPelunasan]) groups[p.tglPelunasan] = []; groups[p.tglPelunasan].push(p); });
+                    Object.keys(groups).forEach(date => {
+                        const sub = groups[date].reduce((s,p) => s + p.jumlah, 0);
+                        html += `<div class="mb-4"><div class="bg-indigo-50 p-2 px-4 rounded-xl flex justify-between items-center mb-1"><span class="text-[9px] font-black text-indigo-700 uppercase">📅 ${date}</span><span class="text-[9px] font-black text-indigo-700 uppercase font-black">Rp ${sub.toLocaleString()}</span></div>`;
+                        groups[date].forEach(p => { html += `<div class="bg-white p-3 rounded-xl border flex justify-between items-center mb-1 mx-1 text-xs"><span>${p.nama}</span><div class="flex items-center gap-3"><span class="font-bold text-green-600">Rp ${p.jumlah.toLocaleString()}</span><button onclick="batalBayar('${p.id}')" class="text-red-400 text-[10px] font-bold">BATAL</button></div></div>`; });
+                        html += `</div>`;
+                    });
+                } else {
+                    html = lunas.map(p => `<div class="bg-white p-3 rounded-xl border flex justify-between items-center text-xs px-4"><div><b>${p.nama}</b><br><small class="text-gray-400">${p.tglPelunasan}</small></div><div class="flex items-center gap-3"><span class="font-bold text-green-600">Rp ${p.jumlah.toLocaleString()}</span><button onclick="batalBayar('${p.id}')" class="text-red-400 text-[10px] font-bold">BATAL</button></div></div>`).join('');
+                }
+            } else if (type === 'keluar') {
+                html = dataPengeluaran.map((p, i) => `<div class="bg-white p-3 rounded-2xl border flex justify-between items-center text-xs px-4"><span>${p.ket}</span><div class="flex items-center gap-3"><b>Rp ${p.nominal.toLocaleString()}</b><button onclick="hapusEx(${i})" class="text-gray-300 font-bold">✕</button></div></div>`).join('');
+            } else if (type === 'total') {
+                html = dataPelanggan.map(p => `<div class="bg-white p-2 rounded border text-[9px] mb-1 flex justify-between px-4"><span>${p.nama}</span><span class="uppercase font-bold">${p.status}</span></div>`).join('');
+            } else if (type === 'belum') {
+                html = dataPelanggan.filter(p => p.status === 'Belum Bayar').map(p => `<div class="bg-white p-3 rounded-xl border flex justify-between items-center text-xs px-4 uppercase"><span>${p.nama}</span><span class="font-bold text-red-500 text-xs">Rp ${p.jumlah.toLocaleString()}</span></div>`).join('');
+            }
+            container.innerHTML = html || '<p class="text-center py-4 text-[10px] text-gray-400 uppercase font-bold italic tracking-widest">Kosong</p>';
+        }
+
+        // --- EXPORT/IMPORT ---
+        function exportLunasSemua() {
+            try {
+                const lunas = dataPelanggan.filter(p => p.status === 'Lunas').map((p,i)=>({"No": i+1, "Nama Pelanggan": p.nama, "Harga": p.jumlah, "Alamat": p.alamat, "Tgl Bayar": p.tglPelunasan }));
+                if(lunas.length === 0) return alert("Belum ada data.");
+                const total = lunas.reduce((s,p)=>s+p["Harga"], 0);
+                lunas.push({"No":"","Nama Pelanggan":"TOTAL SEMUA","Harga":total});
+                const wb = XLSX.utils.book_new(); const ws = XLSX.utils.json_to_sheet(lunas);
+                XLSX.utils.book_append_sheet(wb, ws, "Semua_Lunas");
+                XLSX.writeFile(wb, "Laporan_WiFi_Semua.xlsx");
+            } catch (err) { alert("Ekspor Gagal!"); }
+        }
+
+        function exportLunasHarian() {
+            try {
+                const t = document.getElementById('filterTglExport').value; if(!t) return alert("Pilih tanggal!");
+                const lunas = dataPelanggan.filter(p => p.status === 'Lunas' && p.tglPelunasan === t).map((p,i)=>({"No": i+1, "Nama Pelanggan": p.nama, "Harga": p.jumlah, "Alamat": p.alamat, "Tgl Bayar": p.tglPelunasan }));
+                if(lunas.length === 0) return alert("Data kosong di tanggal ini.");
+                const total = lunas.reduce((s,p)=>s+p["Harga"], 0);
+                lunas.push({"No":"","Nama Pelanggan":"TOTAL HARIAN","Harga":total});
+                const wb = XLSX.utils.book_new(); const ws = XLSX.utils.json_to_sheet(lunas);
+                XLSX.utils.book_append_sheet(wb, ws, "Harian");
+                XLSX.writeFile(wb, `Laporan_${t}.xlsx`);
+            } catch (err) { alert("Ekspor Gagal!"); }
+        }
+
+        function importExcelSmart() {
+            const f = document.getElementById('importFile').files[0]; if(!f) return alert("Pilih file Excel!");
+            const r = new FileReader(); r.onload = (e) => {
+                const workbook = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
+                const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+                json.forEach(row => {
+                    let n, t, h, a;
+                    Object.keys(row).forEach(k => {
+                        let c = k.toString().toLowerCase().trim().replace(/\s/g, '');
+                        if(c.includes('nama')) n = row[k]; if(c.includes('tgl')||c.includes('tanggal')) t = row[k]; if(c.includes('harga')||c.includes('tagihan')) h = row[k]; if(c.includes('alamat')) a = row[k];
+                    });
+                    if(n) {
+                        let hv = parseInt(h)||0; if(hv < 2000) hv *= 1000;
+                        dataPelanggan.push({ id: "ID-"+Date.now()+Math.random().toString(36).substr(2,5), nama: n.toString().trim(), tgl: t||"1", jumlah: hv, alamat: a||"", status: 'Belum Bayar' });
+                    }
+                });
+                save(); alert("Selesai!");
+            }; r.readAsArrayBuffer(f);
+        }
+
+        // --- FUNGSI DASAR ---
+        function openModal(id = null) {
+            document.getElementById('modalPelanggan').classList.remove('hidden');
+            if(id) {
+                const p = dataPelanggan.find(i => i.id === id);
+                document.getElementById('editId').value = p.id; document.getElementById('f_nama').value = p.nama; document.getElementById('f_tgl').value = p.tgl; document.getElementById('f_jumlah').value = p.jumlah; document.getElementById('f_alamat').value = p.alamat;
+            } else {
+                document.getElementById('editId').value = ""; document.getElementById('f_nama').value = ""; document.getElementById('f_tgl').value = ""; document.getElementById('f_jumlah').value = ""; document.getElementById('f_alamat').value = "";
+            }
+        }
+        function simpanPelanggan() {
+            const id = document.getElementById('editId').value;
+            const p = { id: id ? id : "ID-"+Date.now()+Math.random().toString(36).substr(2,5), nama: document.getElementById('f_nama').value, tgl: document.getElementById('f_tgl').value, jumlah: parseInt(document.getElementById('f_jumlah').value) || 0, alamat: document.getElementById('f_alamat').value, status: 'Belum Bayar' };
+            if(!p.nama) return;
+            if(id) { const i = dataPelanggan.findIndex(x => x.id === id); p.status = dataPelanggan[i].status; dataPelanggan[i] = p; } else { dataPelanggan.push(p); }
+            save(); closeModal();
+        }
+        function closeModal() { document.getElementById('modalPelanggan').classList.add('hidden'); }
+        function resetBulanan() { if(confirm("Mulai bulan baru? Status Lunas akan di-reset.")) { dataPelanggan.forEach(p => { p.status = 'Belum Bayar'; delete p.tglPelunasan; }); save(); } }
+        function hapusSemuaData() { if(confirm("HAPUS SEMUA DATA?")) { dataPelanggan = []; dataPengeluaran = []; save(); } }
+        function hapusPelanggan(id) { if(confirm("Hapus?")) { dataPelanggan = dataPelanggan.filter(p => p.id !== id); save(); } }
+        function tambahPengeluaran() { const k = document.getElementById('ket-keluar').value, n = parseInt(document.getElementById('nom-keluar').value); if(k && n) { dataPengeluaran.push({ ket: k, nominal: n, tgl: new Date().toLocaleDateString() }); save(); } }
+        function hapusEx(i) { dataPengeluaran.splice(i, 1); save(); }
+        function backupData() { const blob = new Blob([JSON.stringify({ pel: dataPelanggan, ex: dataPengeluaran })], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `backup_wifi.json`; a.click(); }
+        function restoreData(e) { const r = new FileReader(); r.onload = (e) => { const d = JSON.parse(e.target.result); dataPelanggan = d.pel; dataPengeluaran = d.ex; save(); alert("Data Pulih!"); }; r.readAsText(e.target.files[0]); }
+
+        refreshUI();
+    </script>
+</body>
+</html>
